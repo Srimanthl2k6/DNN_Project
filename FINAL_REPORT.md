@@ -9,3 +9,7 @@ Best Experiment: Exp_KL_Random_Linear
 - PGD High Entropy Acc Drop: 0.2600
 - FGSM Low Entropy Acc Drop: 0.5800
 - PGD Low Entropy Acc Drop: 0.6400
+
+Experiment Scope Note:
+Due to compute constraints, only KL and CustomDisag losses were fully evaluated.
+Other planned ablations (JSD, SoftCE, ImageNet-pretrained variants) were not executed.

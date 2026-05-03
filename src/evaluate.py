@@ -82,8 +82,11 @@ def evaluate_model(model, dataloader, device):
     # 3. Entropy Prediction Quality
     true_ent = entropy(targets)
     pred_ent = entropy(preds)
-    pearson_corr, _ = pearsonr(true_ent, pred_ent) if np.std(pred_ent) > 0 else (0.0, 0.0)
-    spearman_corr, _ = spearmanr(true_ent, pred_ent) if np.std(pred_ent) > 0 else (0.0, 0.0)
+    try:
+        pearson_corr, _ = pearsonr(true_ent, pred_ent)
+        spearman_corr, _ = spearmanr(true_ent, pred_ent)
+    except Exception:
+        pearson_corr, spearman_corr = 0.0, 0.0
     pre_k = precision_at_k(true_ent, pred_ent, [100, 200, 500])
     
     # 4. Uncertainty & Rankings
