@@ -72,7 +72,10 @@ def evaluate_model(model, dataloader, device):
     mean_tvd = np.mean(tvd)
 
     brier_score = np.mean(np.sum((preds - targets) ** 2, axis=1))
-    mean_cos = np.mean([cosine_similarity([targets[i]], [preds[i]])[0][0] for i in range(len(targets))])
+    mean_cos = np.mean(
+        np.sum(targets * preds, axis=1) /
+        (np.linalg.norm(targets, axis=1) * np.linalg.norm(preds, axis=1) + 1e-12)
+    )
     
     # 2. Hard Accuracy Evaluators
     hard_targets = np.argmax(targets, axis=1)
