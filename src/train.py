@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import os
 import copy
+import json
 
 from data import get_cifar10h_dataloaders
 from model import CustomResNet18
@@ -70,7 +71,17 @@ def train(model, train_dl, val_dl, criterion, optimizer, num_epochs=50, patience
 
 def run_experiment(exp_name, model_fn, criterion, train_dl, val_dl, device, root_dir):
     print(f"=== Starting Experiment: {exp_name} ===")
-    model = model_fn().to(device)
+    try:
+        model = model_fn().to(device)
+    except Exception as exc:
+        if exp_name == 'Exp_KL_ImageNet_Linear':
+            raise RuntimeError(
+                "Failed to load ImageNet pretrained weights for "
+                "Exp_KL_ImageNet_Linear. Check internet access or the local "
+                "torchvision weights cache before rerunning training."
+            ) from exc
+        raise
+
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     # Using a learning rate scheduler could also be added here
     
@@ -81,8 +92,33 @@ def run_experiment(exp_name, model_fn, criterion, train_dl, val_dl, device, root
     # Save best model
     os.makedirs(os.path.join(root_dir, 'checkpoints'), exist_ok=True)
     torch.save(best_model.state_dict(), os.path.join(root_dir, 'checkpoints', f'{exp_name}.pth'))
+
+    losses_path = os.path.join(root_dir, 'checkpoints', f'{exp_name}_losses.json')
+    with open(losses_path, 'w', encoding='utf-8') as handle:
+        json.dump(
+            {
+                'experiment_name': exp_name,
+                'train_losses': [float(loss) for loss in train_losses],
+                'val_losses': [float(loss) for loss in val_losses],
+            },
+            handle,
+            indent=2,
+        )
     
     return train_losses, val_losses
+
+
+def build_ablations():
+    return [
+        # (Experiment Name, Head Type, Pretrain Strategy, Loss Criterion)
+        ('Exp_KL_Random_Linear', 'linear', 'random', KLDivergenceLoss()),
+        ('Exp_JS_Random_Linear', 'linear', 'random', JSDivergenceLoss()),
+        ('Exp_SoftCE_Random_Linear', 'linear', 'random', SoftCrossEntropyLoss()),
+        ('Exp_CustomDisag_Random_Linear', 'linear', 'random', CustomDisagreementLoss(alpha=0.5)),
+        ('Exp_KL_Random_MLP', 'mlp', 'random', KLDivergenceLoss()),
+        ('Exp_KL_ImageNet_Linear', 'linear', 'imagenet', KLDivergenceLoss()),
+    ]
+
 
 if __name__ == '__main__':
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,11 +129,7 @@ if __name__ == '__main__':
     train_dl, val_dl, test_dl, _ = get_cifar10h_dataloaders(root, batch_size=128, num_workers=2)
     
     # --- ABLATIONS BLOCK ---
-    ablations = [
-        # (Experiment Name, Head Type, Pretrain Strategy, Loss Criterion)
-        ('Exp_KL_Random_Linear', 'linear', 'random', KLDivergenceLoss()),
-        ('Exp_CustomDisag_Random_Linear', 'linear', 'random', CustomDisagreementLoss(alpha=0.5)),
-    ]
+    ablations = build_ablations()
     
     for exp_name, head_type, pretrain_strategy, criterion in ablations:
         print(f"\n[{exp_name}] -> Head: {head_type} | Weights: {pretrain_strategy} | Loss: {criterion.__class__.__name__}")

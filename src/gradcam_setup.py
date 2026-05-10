@@ -7,6 +7,11 @@ from data import get_cifar10h_dataloaders
 from model import CustomResNet18
 from explain import GradCAM, overlay_cam_on_image
 
+
+def get_gradcam_target_layer(model):
+    return model.backbone[7][-1].conv2
+
+
 def run_gradcam(root_dir, device):
     _, _, test_dl, _ = get_cifar10h_dataloaders(root_dir, batch_size=1, num_workers=0)
     
@@ -21,7 +26,7 @@ def run_gradcam(root_dir, device):
     model.to(device)
     model.eval()
     
-    target_layer = model.resnet.layer4[-1].conv2
+    target_layer = get_gradcam_target_layer(model)
     cam = GradCAM(model, target_layer)
     
     # Load High/Low Entropy index arrays

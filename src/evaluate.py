@@ -135,6 +135,7 @@ if __name__ == "__main__":
         ('Exp_JS_Random_Linear', 'linear', 'random'),
         ('Exp_SoftCE_Random_Linear', 'linear', 'random'),
         ('Exp_CustomDisag_Random_Linear', 'linear', 'random'),
+        ('Exp_KL_Random_MLP', 'mlp', 'random'),
         ('Exp_KL_ImageNet_Linear', 'linear', 'imagenet'),
     ]
     
@@ -145,7 +146,15 @@ if __name__ == "__main__":
             continue
             
         print(f"\nEvaluating {exp_name}...")
-        model = CustomResNet18(head_type=head_type, pretrain_strategy=pretrain_strategy)
+        try:
+            model = CustomResNet18(head_type=head_type, pretrain_strategy=pretrain_strategy)
+        except Exception as exc:
+            if pretrain_strategy == 'imagenet':
+                raise RuntimeError(
+                    f"Failed to load ImageNet pretrained weights while evaluating {exp_name}. "
+                    "Check internet access or the local torchvision weights cache."
+                ) from exc
+            raise
         model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
         model.to(device)
         

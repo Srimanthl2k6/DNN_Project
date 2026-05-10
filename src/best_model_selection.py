@@ -25,7 +25,8 @@ def select_best_model(root_dir):
     print(f"Lowest KL Divergence Model: {best_kl['experiment_name']} (KL: {best_kl['kl']:.4f})")
     print(f"Best Calibrated Model (ECE): {best_ece['experiment_name']} (ECE: {best_ece['ece']:.4f})")
     
-    # Save selection matrix
+    # Save selection matrix with the best KL model first for downstream reporting/audit.
+    df = df.sort_values('kl').reset_index(drop=True)
     df.to_csv(os.path.join(root_dir, 'FINAL_COMPARISON_MATRIX.csv'), index=False)
     print("Exported FINAL_COMPARISON_MATRIX.csv")
 

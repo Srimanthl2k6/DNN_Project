@@ -6,6 +6,19 @@ from torch.utils.data import Dataset, Subset, DataLoader
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 
+CIFAR10_CLASSES = [
+    'airplane',
+    'automobile',
+    'bird',
+    'cat',
+    'deer',
+    'dog',
+    'frog',
+    'horse',
+    'ship',
+    'truck',
+]
+
 def load_cifar10_test_batch(data_dir):
     """Loads the CIFAR-10 test_batch file containing the 10,000 test images."""
     file_path = os.path.join(data_dir, 'test_batch')
@@ -112,6 +125,11 @@ def compute_entropy(probs):
     eps = 1e-12
     return -np.sum(probs * np.log2(probs + eps), axis=1)
 
+
+def _labels_for_eda(probs):
+    return np.argmax(probs, axis=1)
+
+
 def eda_visualizations(root_dir, probs):
     """Generates the required Phase 1 EDA visualizations."""
     entropies = compute_entropy(probs)
@@ -127,8 +145,75 @@ def eda_visualizations(root_dir, probs):
     plt.grid(axis='y', alpha=0.75)
     plt.savefig(os.path.join(root_dir, 'plots', 'entropy_histogram.png'))
     plt.close()
+
+    # 2. Mean annotation entropy by class
+    labels = _labels_for_eda(probs)
+    per_class_entropy = []
+    for class_idx in range(10):
+        class_mask = labels == class_idx
+        if np.any(class_mask):
+            per_class_entropy.append(float(np.mean(entropies[class_mask])))
+        else:
+            per_class_entropy.append(0.0)
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(CIFAR10_CLASSES, per_class_entropy, color='steelblue', edgecolor='black')
+    plt.title('Mean Human Annotation Entropy by Class')
+    plt.xlabel('CIFAR-10 Class')
+    plt.ylabel('Mean Shannon Entropy')
+    plt.xticks(rotation=35, ha='right')
+    plt.grid(axis='y', alpha=0.35)
+    plt.tight_layout()
+    plt.savefig(os.path.join(root_dir, 'plots', 'per_class_entropy.png'))
+    plt.close()
+
+    # 3. Mean annotator distribution conditioned on the majority-vote class
+    annotator_matrix = np.zeros((10, 10), dtype=np.float32)
+    for class_idx in range(10):
+        class_mask = labels == class_idx
+        if np.any(class_mask):
+            annotator_matrix[class_idx] = np.mean(probs[class_mask], axis=0)
+
+    plt.figure(figsize=(9, 7))
+    plt.imshow(annotator_matrix, cmap='magma', aspect='auto', vmin=0.0, vmax=1.0)
+    plt.colorbar(label='Mean Annotator Probability')
+    plt.title('Mean Annotator Distribution by Majority-Vote Class')
+    plt.xlabel('Assigned Class Probability')
+    plt.ylabel('Majority-Vote Class')
+    plt.xticks(np.arange(len(CIFAR10_CLASSES)), CIFAR10_CLASSES, rotation=45, ha='right')
+    plt.yticks(np.arange(len(CIFAR10_CLASSES)), CIFAR10_CLASSES)
+    plt.tight_layout()
+    plt.savefig(os.path.join(root_dir, 'plots', 'annotator_confusion.png'))
+    plt.close()
+
+    # 4. Annotation certainty / count distribution
+    counts_path = os.path.join(root_dir, 'cifar10h-counts.npy')
+    if os.path.exists(counts_path):
+        counts = np.load(counts_path)
+        if counts.shape == probs.shape:
+            certainty_values = counts.sum(axis=1)
+            xlabel = 'Number of Human Annotations'
+            title = 'Distribution of Human Annotation Counts'
+        else:
+            certainty_values = np.max(probs, axis=1)
+            xlabel = 'Max-Class Probability'
+            title = 'Distribution of Annotation Certainty'
+    else:
+        certainty_values = np.max(probs, axis=1)
+        xlabel = 'Max-Class Probability'
+        title = 'Distribution of Annotation Certainty'
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(certainty_values, bins=30, color='seagreen', edgecolor='black', alpha=0.8)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel('Frequency')
+    plt.grid(axis='y', alpha=0.75)
+    plt.tight_layout()
+    plt.savefig(os.path.join(root_dir, 'plots', 'annotation_certainty.png'))
+    plt.close()
     
-    print(f"Saved entropy_histogram.png. Mean entropy: {np.mean(entropies):.4f}")
+    print(f"Saved EDA plots. Mean entropy: {np.mean(entropies):.4f}")
 
 if __name__ == '__main__':
     # Test data script

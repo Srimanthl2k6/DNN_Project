@@ -113,6 +113,38 @@ def evaluate_model(model, dataloader, device):
         'p@500': pre_k['P@500']
     }
 
+
+def infer_experiment_config(exp_name):
+    head_type = 'mlp' if 'MLP' in exp_name else 'linear'
+    pretrain = 'imagenet' if 'ImageNet' in exp_name else 'random'
+
+    if 'SoftCE' in exp_name:
+        loss_type = 'SoftCE'
+    elif 'JS' in exp_name:
+        loss_type = 'JS'
+    elif 'CustomDisag' in exp_name:
+        loss_type = 'CustomDisag'
+    elif 'KL' in exp_name:
+        loss_type = 'KL'
+    else:
+        loss_type = 'Unknown'
+
+    return head_type, pretrain, loss_type
+
+
+def build_model_for_experiment(exp_name):
+    head_type, pretrain, _ = infer_experiment_config(exp_name)
+    try:
+        return CustomResNet18(head_type=head_type, pretrain_strategy=pretrain)
+    except Exception as exc:
+        if pretrain == 'imagenet':
+            raise RuntimeError(
+                f"Failed to load ImageNet pretrained weights while evaluating {exp_name}. "
+                "Check internet access or the local torchvision weights cache."
+            ) from exc
+        raise
+
+
 def poll_checkpoints(root_dir, device, test_dl):
     results_path = os.path.join(root_dir, 'results.csv')
     checkpoints_dir = os.path.join(root_dir, 'checkpoints')
@@ -142,16 +174,8 @@ def poll_checkpoints(root_dir, device, test_dl):
             
         print(f"\n[AUTO-EVAL] Evaluating new checkpoint: {exp_name}...")
         
-        # We need to infer architecture. For this project, mostly linear / random.
-        # But we could parse from exp_name.
-        head_type = 'linear'
-        pretrain = 'random'
-        loss_type = 'Unknown'
-        if 'ImageNet' in exp_name: pretrain = 'imagenet'
-        if 'KL' in exp_name: loss_type = 'KL'
-        if 'CustomDisag' in exp_name: loss_type = 'CustomDisag'
-        
-        model = CustomResNet18(head_type=head_type, pretrain_strategy=pretrain)
+        head_type, pretrain, loss_type = infer_experiment_config(exp_name)
+        model = build_model_for_experiment(exp_name)
         ckpt_path = os.path.join(checkpoints_dir, pth_file)
         
         # Load weights safely
