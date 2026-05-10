@@ -1,0 +1,3 @@
+model_variant,head_type,pretrain_strategy,trainable_params,backbone_params,head_params
+Custom ResNet18 (Linear Head),linear,random,11173962,11168832,5130
+Custom ResNet18 (MLP Head),mlp,random,11302730,11168832,133898

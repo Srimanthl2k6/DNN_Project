@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from data import CIFAR10_CLASSES, get_cifar10h_dataloaders
 from evaluate_auto import entropy
-from model import CustomResNet18
+from model import CustomResNet18, save_model_assets
 
 
 CIFAR_MEAN = np.array([0.4914, 0.4822, 0.4465])
@@ -295,6 +295,58 @@ def plot_loss_comparison(root_dir):
     return output
 
 
+def plot_ablation_kl_summary(root_dir):
+    os.makedirs(os.path.join(root_dir, 'plots'), exist_ok=True)
+    results_path = os.path.join(root_dir, 'results_final.csv')
+    output = os.path.join(root_dir, 'plots', 'ablation_kl_summary.png')
+
+    if not os.path.exists(results_path):
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.axis('off')
+        ax.text(0.5, 0.5, 'results_final.csv not found. Run the evaluation summary pipeline first.', ha='center', va='center')
+        fig.tight_layout()
+        fig.savefig(output)
+        plt.close(fig)
+        return output
+
+    df = pd.read_csv(results_path)
+    if 'experiment_name' not in df.columns or 'kl' not in df.columns:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.axis('off')
+        ax.text(0.5, 0.5, 'results_final.csv is missing experiment_name or kl.', ha='center', va='center')
+        fig.tight_layout()
+        fig.savefig(output)
+        plt.close(fig)
+        return output
+
+    plot_df = df[['experiment_name', 'kl']].dropna().sort_values('kl').reset_index(drop=True)
+    colors = ['#2a9d8f'] + ['#9ecae1'] * max(len(plot_df) - 1, 0)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bars = ax.bar(plot_df['experiment_name'], plot_df['kl'], color=colors, edgecolor='black')
+    ax.set_title('Ablation Summary: KL Divergence Across Experiments')
+    ax.set_xlabel('Experiment')
+    ax.set_ylabel('Mean KL Divergence')
+    ax.set_xticks(np.arange(len(plot_df)))
+    ax.set_xticklabels(plot_df['experiment_name'], rotation=35, ha='right')
+    ax.grid(axis='y', alpha=0.3)
+
+    for bar, value in zip(bars, plot_df['kl']):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f'{value:.3f}',
+            ha='center',
+            va='bottom',
+            fontsize=9,
+        )
+
+    fig.tight_layout()
+    fig.savefig(output)
+    plt.close(fig)
+    return output
+
+
 def plot_robustness_drops(root_dir):
     os.makedirs(os.path.join(root_dir, 'plots'), exist_ok=True)
     res_path = os.path.join(root_dir, 'robustness_results.csv')
@@ -322,6 +374,7 @@ def plot_robustness_drops(root_dir):
 def generate_visualizations(root_dir):
     os.makedirs(os.path.join(root_dir, 'plots'), exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    save_model_assets(root_dir)
     
     # Load dataset
     _, _, test_dl, all_probs = get_cifar10h_dataloaders(root_dir, batch_size=128, num_workers=0)
@@ -342,6 +395,7 @@ def generate_visualizations(root_dir):
     plot_entropy_scatter(root_dir, test_dl, device)
     plot_loss_curves(root_dir)
     plot_loss_comparison(root_dir)
+    plot_ablation_kl_summary(root_dir)
 
     # 4. Robustness plots
     res_path = os.path.join(root_dir, 'robustness_results.csv')

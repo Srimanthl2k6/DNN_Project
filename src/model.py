@@ -1,3 +1,6 @@
+import csv
+import os
+
 import torch
 import torch.nn as torch_nn
 import torch.nn.functional as F
@@ -76,17 +79,193 @@ class CustomResNet18(torch_nn.Module):
         # Return logits to easily use F.log_softmax in the loss.
         return logits
 
-def print_model_summary():
-    model_linear = CustomResNet18(head_type='linear')
-    num_params = sum(p.numel() for p in model_linear.parameters() if p.requires_grad)
-    print(f"Custom ResNet18 (Linear Head) Trainable Parameters: {num_params}")
+def _count_trainable_params(module):
+    return sum(param.numel() for param in module.parameters() if param.requires_grad)
 
-    model_mlp = CustomResNet18(head_type='mlp')
-    num_params_mlp = sum(p.numel() for p in model_mlp.parameters() if p.requires_grad)
-    print(f"Custom ResNet18 (MLP Head) Trainable Parameters: {num_params_mlp}")
+
+def get_model_summary_rows():
+    rows = []
+    for model_variant, head_type in [
+        ('Custom ResNet18 (Linear Head)', 'linear'),
+        ('Custom ResNet18 (MLP Head)', 'mlp'),
+    ]:
+        model = CustomResNet18(head_type=head_type, pretrain_strategy='random')
+        rows.append(
+            {
+                'model_variant': model_variant,
+                'head_type': head_type,
+                'pretrain_strategy': 'random',
+                'trainable_params': _count_trainable_params(model),
+                'backbone_params': _count_trainable_params(model.backbone),
+                'head_params': _count_trainable_params(model.head),
+            }
+        )
+    return rows
+
+
+def save_model_summary_assets(root_dir, summary_rows):
+    import matplotlib.pyplot as plt
+
+    os.makedirs(os.path.join(root_dir, 'plots'), exist_ok=True)
+    csv_path = os.path.join(root_dir, 'model_parameter_summary.csv')
+    image_path = os.path.join(root_dir, 'plots', 'model_parameter_summary.png')
+    fieldnames = [
+        'model_variant',
+        'head_type',
+        'pretrain_strategy',
+        'trainable_params',
+        'backbone_params',
+        'head_params',
+    ]
+
+    with open(csv_path, 'w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(summary_rows)
+
+    fig, ax = plt.subplots(figsize=(11, 2.5 + 0.55 * len(summary_rows)))
+    ax.axis('off')
+    table = ax.table(
+        cellText=[
+            [
+                row['model_variant'],
+                row['head_type'],
+                row['pretrain_strategy'],
+                f"{row['trainable_params']:,}",
+                f"{row['backbone_params']:,}",
+                f"{row['head_params']:,}",
+            ]
+            for row in summary_rows
+        ],
+        colLabels=[
+            'Model Variant',
+            'Head Type',
+            'Pretrain',
+            'Trainable Params',
+            'Backbone Params',
+            'Head Params',
+        ],
+        cellLoc='center',
+        loc='center',
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.0, 1.8)
+    ax.set_title('CustomResNet18 Parameter Count Summary', fontsize=14, pad=16)
+    fig.tight_layout()
+    fig.savefig(image_path, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+
+    return csv_path, image_path
+
+
+def plot_model_architecture(root_dir):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    os.makedirs(os.path.join(root_dir, 'plots'), exist_ok=True)
+    output_path = os.path.join(root_dir, 'plots', 'model_architecture.png')
+
+    fig, ax = plt.subplots(figsize=(15, 7))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+
+    def draw_box(x, y, width, height, text, facecolor):
+        box = FancyBboxPatch(
+            (x, y),
+            width,
+            height,
+            boxstyle='round,pad=0.012,rounding_size=0.02',
+            linewidth=1.4,
+            edgecolor='#1f2937',
+            facecolor=facecolor,
+        )
+        ax.add_patch(box)
+        ax.text(x + width / 2, y + height / 2, text, ha='center', va='center', fontsize=10)
+
+    def draw_arrow(x_start, y_start, x_end, y_end):
+        arrow = FancyArrowPatch(
+            (x_start, y_start),
+            (x_end, y_end),
+            arrowstyle='-|>',
+            mutation_scale=12,
+            linewidth=1.4,
+            color='#374151',
+        )
+        ax.add_patch(arrow)
+
+    top_boxes = [
+        (0.03, 0.67, 'Input Image\n3 x 32 x 32', '#dbeafe'),
+        (0.16, 0.67, 'Stem\nConv3x3 + BN + ReLU', '#bfdbfe'),
+        (0.29, 0.67, 'Layer1\n64 channels', '#c7d2fe'),
+        (0.42, 0.67, 'Layer2\n128 channels', '#c7d2fe'),
+        (0.55, 0.67, 'Layer3\n256 channels', '#c7d2fe'),
+        (0.68, 0.67, 'Layer4\n512 channels', '#c7d2fe'),
+        (0.81, 0.67, 'AvgPool\nFlatten to 512', '#ddd6fe'),
+    ]
+
+    box_width = 0.1
+    box_height = 0.14
+    for x_pos, y_pos, label, color in top_boxes:
+        draw_box(x_pos, y_pos, box_width, box_height, label, color)
+
+    for current_box, next_box in zip(top_boxes, top_boxes[1:]):
+        draw_arrow(current_box[0] + box_width, current_box[1] + box_height / 2, next_box[0], next_box[1] + box_height / 2)
+
+    draw_box(0.73, 0.36, 0.16, 0.14, 'Linear Head\nFC 512 -> 10', '#fde68a')
+    draw_box(0.92, 0.36, 0.07, 0.14, '10 logits', '#fca5a5')
+    draw_box(0.73, 0.10, 0.16, 0.14, 'MLP Head\nFC 512 -> 256\nReLU + Dropout\nFC 256 -> 10', '#f9a8d4')
+    draw_box(0.92, 0.10, 0.07, 0.14, '10 logits', '#fca5a5')
+
+    draw_arrow(0.86, 0.67, 0.81, 0.50)
+    draw_arrow(0.86, 0.67, 0.81, 0.24)
+    draw_arrow(0.89, 0.43, 0.92, 0.43)
+    draw_arrow(0.89, 0.17, 0.92, 0.17)
+
+    ax.text(0.5, 0.93, 'CustomResNet18 for CIFAR-10H', ha='center', va='center', fontsize=16, fontweight='bold')
+    ax.text(
+        0.5,
+        0.88,
+        'ResNet-18 backbone adapted for 32x32 inputs: 3x3 stem convolution, no max-pooling, shared backbone with two head options.',
+        ha='center',
+        va='center',
+        fontsize=10,
+    )
+    ax.text(0.5, 0.58, 'Shared backbone', ha='center', va='center', fontsize=11, fontweight='bold', color='#4338ca')
+    ax.text(0.86, 0.55, 'Alternative prediction heads', ha='center', va='center', fontsize=11, fontweight='bold', color='#92400e')
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+    return output_path
+
+
+def print_model_summary(root_dir=None):
+    summary_rows = get_model_summary_rows()
+    for row in summary_rows:
+        print(
+            f"{row['model_variant']} Trainable Parameters: {row['trainable_params']:,} "
+            f"(backbone={row['backbone_params']:,}, head={row['head_params']:,})"
+        )
+
+    if root_dir is not None:
+        csv_path, image_path = save_model_summary_assets(root_dir, summary_rows)
+        print(f"Saved parameter summary CSV to {csv_path}")
+        print(f"Saved parameter summary image to {image_path}")
+
+    return summary_rows
+
+
+def save_model_assets(root_dir):
+    summary_rows = print_model_summary(root_dir=root_dir)
+    architecture_path = plot_model_architecture(root_dir)
+    print(f"Saved architecture diagram to {architecture_path}")
+    return summary_rows, architecture_path
 
 if __name__ == "__main__":
-    print_model_summary()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    save_model_assets(root)
     x = torch.randn(2, 3, 32, 32)
     m = CustomResNet18()
     out = m(x)
